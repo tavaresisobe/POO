@@ -1,55 +1,105 @@
+import { compare, hash } from 'bcrypt';
+//npm install bcrypt
 import { Bike } from "./bike";
 import { Rent } from "./rent";
 import { User } from "./user";
-//import crypto from 'crypto'
+import crypto from 'crypto'
 
 export class App {
     users: User[] = []
     bikes: Bike[] = []
     rents: Rent[] = []
 
-    findUser(email: string): User | undefined {
-        return this.users.find(user => user.email === email);
+    listBikes(): Bike[] { //lista bikes
+        return this.bikes;
+    }
+    
+    listRents(): Rent[] { //lista reserva/alugueis
+        return this.rents;
+    }
+     
+    listUsers(): User[] { //lista usuario
+        return this.users;
     }
 
-    registerUser(user: User): void {
-        const existingUser = this.findUser(user.email);
-        if (existingUser) {
-            throw new Error('Duplicate user.');
+    findUser(email: string): User {
+        return this.users.find(user => user.email === email)
+    }
+
+    registerUser(user: User): string {
+        for (const rUser of this.users) {
+            if (rUser.email === user.email) {
+                throw new Error('Duplicate user.')
+            }
         }
-
-        user.id = crypto.randomUUID();
-        this.users.push(user);
+        const newId = crypto.randomUUID()
+        user.id = newId
+        this.users.push(user)
+        return newId
     }
 
-    registerBike(bike: Bike): void {
-        this.bikes.push(bike);
+    registerBike(bike: Bike): string {
+        const newId = crypto.randomUUID()
+        bike.id = newId
+        this.bikes.push(bike)
+        return newId
     }
 
-    removeBike(bikeId: string): void {
-        const bikeIndex = this.bikes.findIndex(bike => bike.id === bikeId);
-        if (bikeIndex !== -1) {
-            this.bikes.splice(bikeIndex, 1);
+    removeUser(email: string): void {
+        const userIndex = this.users.findIndex(user => user.email === email)
+        if (userIndex !== -1) {
+            this.users.splice(userIndex, 1)
+            return
         }
+        throw new Error('User does not exist.')
     }
-
-    rentBike(bikeId: string, renter: User): void {
-        const bike = this.bikes.find(bike => bike.id === bikeId);
-        if (bike) {
-            const rent: Rent = {
-                bikeId: bike.id,
-                renterId: renter.id,
-                startDate: new Date(),
-                endDate: null,
-            };
-            this.rents.push(rent);
+    
+    rentBike(bikeId: string, userEmail: string, startDate: Date, endDate: Date): void {
+        const bike = this.bikes.find(bike => bike.id === bikeId)
+        if (!bike) {
+            throw new Error('Bike not found.')
         }
+        const user = this.findUser(userEmail)
+        if (!user) {
+            throw new Error('User not found.')
+        }
+        const bikeRents = this.rents.filter(rent =>
+            rent.bike.id === bikeId && !rent.dateReturned
+        )
+        const newRent = Rent.create(bikeRents, bike, user, startDate, endDate)
+        this.rents.push(newRent)
     }
 
-    returnBike(bikeId: string): void {
-        const rent = this.rents.find(rent => rent.bikeId === bikeId && !rent.endDate);
+    returnBike(bikeId: string, userEmail: string) {
+        const today = new Date()
+        const rent = this.rents.find(rent => 
+            rent.bike.id === bikeId &&
+            rent.user.email === userEmail &&
+            rent.dateReturned === undefined &&
+            rent.dateFrom <= today
+        )
         if (rent) {
-            rent.endDate = new Date();
+            rent.dateReturned = today
+            return
         }
+        throw new Error('Rent not found.')
     }
+    updateUserPassword(userId: string, newPassword: string): void {
+        const user = this.users.find(user => user.id === userId);
+        if (!user) {
+            throw new Error('User not found.');
+        }
+        const hashedPassword = bcrypt.hashSync(newPassword, 10);
+        user.password = hashedPassword; //guarda nova key
+    }
+
+    async authenticateUser(email: string, password: string): Promise<boolean> {
+        const user = this.users.find(user => user.email === email);
+        if (!user) { //usuario nao existe
+            return false; 
+        }
+        const isPasswordValid = await compare(password, user.password); //verifica criptografia
+        return isPasswordValid;
+    }
+
 }
